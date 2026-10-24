@@ -6,6 +6,40 @@
 
 Das Programm wählt das Backend selbst: auf einem Mac mit Apple Silicon MLX, sonst PyTorch. Mit der Umgebungsvariable `HOERBUCH_BACKEND=mlx` oder `=torch` lässt sich das erzwingen. Entwickelt und durchgemessen ist die Kette auf dem Mac; der PyTorch-Weg nutzt dieselben Modelle in ihrer Originalfassung und dieselbe Textstufe. Unter Windows wurde er sowohl auf der CPU als auch mit einer NVIDIA-CUDA-Grafikkarte erprobt (siehe [Stand der Erprobung](#stand-der-erprobung)). Rückmeldungen zu weiteren Grafikkarten sind willkommen.
 
+## Grafische Oberfläche (Windows, PySide6)
+
+Die Desktopoberfläche führt durch Buchvorbereitung, Stimmenauswahl und Hörbucherstellung.
+Einmalig im Projektordner installieren:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[gui]"
+```
+
+Danach **Hoerbuch starten.bat** doppelt anklicken. Alternativ:
+
+```powershell
+.\.venv\Scripts\python.exe -m hoerbuch.gui
+```
+
+1. Unter **Buch** EPUB oder TXT auswählen, bereinigen und den Text kontrollieren. Änderungen speichern.
+2. Unter **Stimme & Hörprobe** eine WAV-Aufnahme auswählen. Whisper kann den Wortlaut erkennen;
+   anschließend gegenlesen und speichern. Eine Hörprobe erzeugen und direkt abspielen.
+   Alternativ künstliche Stimmen entwerfen und eine davon übernehmen.
+3. Unter **Hörbuch erstellen** Titel, Ausgabeordner und Format wählen und starten.
+   Erweiterte Einstellungen enthalten Modelle, Bitrate und einen Dateiwähler für FFmpeg.
+
+Die Anzeige zeigt Fortschritt, Restzeit (während der Vertonung), verstrichene Zeit und ein Protokoll.
+Eigene Aufnahme und künstliche Stimme sind alternativ auswählbar; die für das Hörbuch aktive
+Stimme wird auch vor dem Export angezeigt. Hörproben lassen sich ohne vorherige Listenauswahl
+abspielen. Ausgabegerät, Lautstärke und Abspielposition können direkt eingestellt werden.
+Die Fortschrittsbalken gelten jeweils für den benannten Verarbeitungsschritt: abgeschlossene
+Textblöcke, Stimmen, Hörproben, vertonte Textzeichen, Kapitel oder tatsächlich exportierte Audiozeit.
+Beim Modellladen und bei der Whisper-Erkennung läuft eine ausdrücklich unbestimmte Aktivitätsanzeige;
+es werden keine zeitgesteuerten oder geschätzten Prozentwerte als gemessener Fortschritt ausgegeben.
+Abbrechen beendet den Arbeitsprozess; vollständig gespeicherte Hörbuchabschnitte bleiben erhalten.
+Zum Fortsetzen dieselbe vorbereitete Textdatei und Referenzstimme wählen. Modelle werden beim
+ersten Einsatz heruntergeladen. Die Oberfläche speichert zuletzt verwendete Dateipfade lokal.
+
 ## Voraussetzungen
 
 - Python 3.10 oder neuer (für den PyTorch-Weg empfiehlt qwen-tts Python 3.12)

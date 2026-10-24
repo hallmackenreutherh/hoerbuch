@@ -21,6 +21,7 @@ from .konfig import (DEFAULT_VOICE, DESIGN_SEED, FFMPEG_HINT, MODEL_STT, REF_SEN
 from .stt import transkribieren
 from .tts import Voice, synth_checked
 from .zahlen import num2words_available
+from .fortschritt import melden
 
 def referenztext(ref: Path, angegeben: str | None, model_id: str = MODEL_STT) -> str:
     """Wortlaut der Referenzaufnahme: angegeben, sonst aus der gleichnamigen .txt, sonst mit
@@ -45,6 +46,7 @@ def _wortlaut_hinweis(text: str, txt: Path):
 
 
 def cmd_exportieren(args) -> Path:
+    melden("epub", "EPUB wird eingelesen und Kapitel werden übernommen")
     src = Path(args.datei)
     title, author, text, info = epub_to_text(src, args.ohne if args.ohne is not None else EPUB_SKIP_DEFAULT,
                                              with_intro=not args.ohne_intro)
@@ -54,6 +56,7 @@ def cmd_exportieren(args) -> Path:
         stem = re.sub(r"[^\w\-]+", "_", title).strip("_") if title else src.stem
         out = src.with_name(stem + ".txt")
     out.write_text(text, encoding="utf-8")
+    melden("epub", "EPUB-Export gespeichert", 1, 1)
     print(f"Exportiert: {out}")
     if title or author:
         print(f"  Titel/Autor:  {title} – {author}")
@@ -73,8 +76,11 @@ def cmd_bereinigen(args) -> Path:
         src = Path(args.datei)
         print()
     report = CleanReport(ki=bool(getattr(args, "ki", False)), numbers=not args.ziffern_lassen)
+    melden("text", "Text wird eingelesen")
     text = read_text(src, report)
+    melden("text", "Text wird bereinigt")
     cleaned = clean_text(text, report)
+    melden("text", "Regelbasierte Textbereinigung abgeschlossen", 1, 1)
     stem = src.name[:-4] if src.name.lower().endswith(".txt") else src.name
     out = src.with_name(stem + (".neu.txt" if stem.endswith(".bereinigt") else ".bereinigt.txt"))
     log = None
@@ -83,6 +89,7 @@ def cmd_bereinigen(args) -> Path:
         cleaned = ki_refine(cleaned, args.ki_modell, report, log, verbose=args.verbose,
                             max_blocks=args.ki_bloecke, headings=args.ki_ueberschriften)
     out.write_text(cleaned, encoding="utf-8")
+    melden("speichern", "Bereinigter Text gespeichert", 1, 1)
 
     print(f"Bereinigt: {out}")
     print(f"  Kodierung:            {report.encoding}")
@@ -116,6 +123,7 @@ def cmd_bereinigen(args) -> Path:
 
 
 def cmd_probe(args):
+    melden("probe", "Probetext wird vorbereitet")
     src = Path(args.datei)
     text = src.read_text(encoding="utf-8")
     sample = sample_paragraph(text)
@@ -133,7 +141,8 @@ def cmd_probe(args):
     if not args.nur_ref and designs:
         designer = Voice(args.modell_design, verbose=args.verbose)
         seed = args.seed if args.seed is not None else DESIGN_SEED
-        for name, desc in designs.items():
+        for di, (name, desc) in enumerate(designs.items()):
+            melden("design", f"Stimme {di + 1} von {len(designs)} wird entworfen", di, len(designs))
             if seed != DESIGN_SEED:
                 name = f"{name}_seed{seed}"      # Varianten nebeneinander aufheben
             path = outdir / f"stimme_{name}.wav"
@@ -149,28 +158,31 @@ def cmd_probe(args):
             (outdir / f"stimme_{name}.txt").write_text(REF_SENTENCE, encoding="utf-8")
             (outdir / f"stimme_{name}.beschreibung.txt").write_text(desc + "\n", encoding="utf-8")
             refs[name] = path
+            melden("design", f"{di + 1} von {len(designs)} Stimmen gespeichert", di + 1, len(designs))
         designer.close()
 
     if args.ref:
         refs["eigene"] = Path(args.ref)
-    elif default_voice():
+    elif default_voice() and not args.nur_design:
         refs["eigene"] = default_voice()
         print(f"  eigene Standardstimme: {refs['eigene']}")
     # Wortlaut der eigenen Referenz vor dem TTS-Modell klären (Whisper braucht sonst zusätzlich Speicher)
     if "eigene" in refs:
         if not refs["eigene"].exists():
             sys.exit(f"Referenzaufnahme nicht gefunden: {refs['eigene']}")
-        eigene_text = referenztext(refs["eigene"], args.ref_text)
+        eigene_text = referenztext(refs["eigene"], args.ref_text, getattr(args, "modell_stt", MODEL_STT))
 
     # Schritt B: Probeabsatz mit jeder Referenzstimme (so klingt später das Buch)
     reader = Voice(args.modell, verbose=args.verbose)
-    for name, ref in refs.items():
+    for ri, (name, ref) in enumerate(refs.items()):
+        melden("probe", f"Hörprobe {ri + 1} von {len(refs)} wird erzeugt", ri, len(refs))
         ref_text = eigene_text if name == "eigene" else REF_SENTENCE
         t0 = time.time()
         audio, auffaellig = synth_checked(reader, sample, ref_audio=ref, ref_text=ref_text)
         dur = audio.size / reader.sample_rate
         out = outdir / f"probe_{name}.wav"
         write_wav(out, audio, reader.sample_rate)
+        melden("probe", f"{ri + 1} von {len(refs)} Hörproben gespeichert", ri + 1, len(refs))
         took = time.time() - t0
         print(f"  Hörprobe {out}  ({dur:.1f} s Audio in {took:.0f} s"
               f"{f', auffällig: {auffaellig} – bitte anhören' if auffaellig else ''})")
@@ -282,6 +294,7 @@ def abschnitte_abgleichen(work: Path, chapters, ref_key: str) -> tuple[int, int]
 
 
 def cmd_vertonen(args):
+    melden("vorbereitung", "Text, Referenzstimme und vorhandene Abschnitte werden geprüft")
     import numpy as np
     src = Path(args.datei)
     if args.ref:
@@ -294,7 +307,7 @@ def cmd_vertonen(args):
                  "hoerbuch stimme aufnahme.wav --text \"…\"")
     if not ref.exists():
         sys.exit(f"Referenzaufnahme nicht gefunden: {ref}")
-    ref_text = referenztext(ref, args.ref_text)
+    ref_text = referenztext(ref, args.ref_text, getattr(args, "modell_stt", MODEL_STT))
 
     text = src.read_text(encoding="utf-8")
     if not args.ohne_bereinigung and not re.search(r"^# ", text, re.M):
@@ -320,6 +333,7 @@ def cmd_vertonen(args):
                      if (work / f"k{ci:03d}_{i:04d}.wav").exists())
     if done_chars:
         print(f"Setze fort: {done_chars / total_chars:.0%} bereits erledigt.")
+    melden("vertonen", "Vertonung · vorhandene und neue Textzeichen", done_chars, total_chars)
 
     voice = None
     suspicious = []
@@ -333,6 +347,8 @@ def cmd_vertonen(args):
                     continue
                 if voice is None:
                     voice = Voice(args.modell, verbose=args.verbose)
+                melden("vertonen", f"Kapitel {ci + 1}/{len(chapters)} · Abschnitt {i + 1}/{len(ch.chunks)} wird gesprochen",
+                       done_chars, total_chars)
                 audio, auffaellig = synth_checked(voice, c.text, ref_audio=ref, ref_text=ref_text,
                                                   temperature=args.temperatur)
                 write_wav(path, audio, voice.sample_rate)
@@ -343,6 +359,8 @@ def cmd_vertonen(args):
                 el = time.time() - t_start
                 rate = chars_this_run / el if el > 0 else 0
                 eta = (total_chars - done_chars) / rate if rate > 0 else 0
+                melden("vertonen", f"Kapitel {ci + 1}/{len(chapters)} · Abschnitt {i + 1}/{len(ch.chunks)} gespeichert · Rest ≈ {fmt_dur(eta)}",
+                       done_chars, total_chars)
                 print(f"\r[{done_chars / total_chars:6.1%}] Kapitel {ci + 1}/{len(chapters)} "
                       f"Abschnitt {i + 1}/{len(ch.chunks)} · {rate * 60:,.0f} Z/min · "
                       f"Rest ≈ {fmt_dur(eta)}   ".replace(",", "."), end="", flush=True)
@@ -364,6 +382,7 @@ def cmd_vertonen(args):
     # Kapitel zusammensetzen
     sr = None
     chapter_files = []
+    melden("kapitel", "Kapitel werden zusammengesetzt", 0, len(chapters))
     for ci, ch in enumerate(chapters):
         parts = []
         for i, c in enumerate(ch.chunks):
@@ -373,6 +392,7 @@ def cmd_vertonen(args):
         out = work / f"kapitel_{ci + 1:03d}.wav"
         write_wav(out, np.concatenate(parts), sr)
         chapter_files.append((ch.title, out, sum(p.size for p in parts) / sr))
+        melden("kapitel", f"Kapitel {ci + 1} von {len(chapters)} zusammengesetzt", ci + 1, len(chapters))
 
     build_output(chapter_files, src, title, fmt=args.format, ausgabe=args.ausgabe, cover=args.cover,
                  autor=args.autor, bitrate=args.bitrate)

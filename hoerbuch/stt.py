@@ -13,6 +13,7 @@ from pathlib import Path
 from .audio import lade_mono
 from .konfig import BACKEND, torch_geraet_und_typ
 from .zahlen import expand_numbers
+from .fortschritt import melden
 
 STT_RATE = 16000             # Whisper erwartet 16 kHz mono
 
@@ -36,6 +37,7 @@ def _transkribieren_mlx(audio, model_id: str) -> str:
         sys.exit("mlx-audio fehlt. Installieren mit:  pip install -U mlx-audio")
     model = load(model_id)
     try:
+        melden("transkription", "Whisper erkennt den gesprochenen Wortlaut")
         return model.generate(audio, language="de", verbose=False).text
     finally:
         del model
@@ -52,6 +54,7 @@ def _transkribieren_torch(audio, model_id: str) -> str:
     geraet, dtype, _ = torch_geraet_und_typ()
     asr = pipeline("automatic-speech-recognition", model=model_id, device=geraet, torch_dtype=dtype)
     try:
+        melden("transkription", "Whisper erkennt den gesprochenen Wortlaut")
         return asr({"raw": audio, "sampling_rate": STT_RATE},
                    generate_kwargs={"language": "german", "task": "transcribe"})["text"]
     finally:
@@ -65,5 +68,8 @@ def transkribieren(pfad: Path, model_id: str) -> str:
     """Wortlaut einer Aufnahme, aufbereitet als Referenztext für Qwen3-TTS."""
     print(f"Schreibe den Wortlaut von {pfad} mit {model_id} mit … (beim ersten Mal wird es heruntergeladen)")
     audio = lade_mono(pfad, STT_RATE)
+    melden("modell", "Whisper-Modell wird geladen; beim ersten Einsatz auch heruntergeladen")
     roh = (_transkribieren_mlx if BACKEND == "mlx" else _transkribieren_torch)(audio, model_id)
-    return referenztext_aufbereiten(roh)
+    result = referenztext_aufbereiten(roh)
+    melden("transkription", "Wortlaut erkannt", 1, 1)
+    return result

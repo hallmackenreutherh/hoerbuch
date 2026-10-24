@@ -141,6 +141,8 @@ class Refiner:
 def ki_refine(text: str, model_id: str, report: CleanReport, log_path: Path,
               verbose: bool = False, max_blocks: int | None = None, headings: bool = False) -> str:
     """Zweite Bereinigungsstufe mit Sprachmodell. Gibt den geänderten Text zurück."""
+    from .fortschritt import melden
+    melden("modell", "Sprachmodell für die Textkorrektur wird geladen")
     pars = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     pars = [" ".join(p.split()) if is_text_par(p) else p for p in pars]
     refiner = Refiner(model_id, verbose)
@@ -160,6 +162,7 @@ def ki_refine(text: str, model_id: str, report: CleanReport, log_path: Path,
              and not re.search(r"[.!?…]\s", p)]
     heading_idx: set[int] = set()
     for k in range(0, len(cands), 20):
+        melden("ueberschriften", "Kapitelüberschriften werden geprüft", k, len(cands))
         group = cands[k:k + 20]
         lines = []
         for n, i in enumerate(group, 1):
@@ -172,6 +175,7 @@ def ki_refine(text: str, model_id: str, report: CleanReport, log_path: Path,
                 if isinstance(n, int) and 1 <= n <= len(group):
                     heading_idx.add(group[n - 1])
         print(f"\r  Überschriften geprüft: {min(k + 20, len(cands))}/{len(cands)}", end="", flush=True)
+        melden("ueberschriften", "Kapitelüberschriften geprüft", min(k + 20, len(cands)), len(cands))
     if cands:
         print()
     for i in sorted(heading_idx):
@@ -207,6 +211,7 @@ def ki_refine(text: str, model_id: str, report: CleanReport, log_path: Path,
     total_chars = sum(len(pars[i]) for b in blocks for i in b)
     done_chars = 0
     for bi, block in enumerate(blocks):
+        melden("ki", f"Textblock {bi + 1} von {len(blocks)} wird geprüft", bi, len(blocks))
         user = "\n\n".join(f"[{n}] {pars[i]}" for n, i in enumerate(block, 1))
         ans = refiner.ask_json(KI_SYSTEM_ERSETZUNGEN, user)
         if not isinstance(ans, list):
@@ -256,6 +261,7 @@ def ki_refine(text: str, model_id: str, report: CleanReport, log_path: Path,
                 report.ki_applied += 1
         log.flush()   # Protokoll sofort lesbar, auch während langer Läufe
         done_chars += sum(len(pars[i]) for i in block)
+        melden("ki", f"{bi + 1} von {len(blocks)} Textblöcken geprüft", bi + 1, len(blocks))
         el = time.time() - t_start
         rate = done_chars / el if el > 0 else 0
         eta = (total_chars - done_chars) / rate if rate > 0 else 0

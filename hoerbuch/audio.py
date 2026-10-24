@@ -10,6 +10,30 @@ from pathlib import Path
 
 from .hilfen import fmt_dur
 from .konfig import FFMPEG_HINT, MAX_PEAK_DB, TARGET_RMS_DB
+from .fortschritt import aktiv, melden
+
+
+def _export_ffmpeg(cmd, duration, offset=0.0, total=None):
+    """FFmpeg meldet tatsächlich codierte Audiozeit; 100 % erst nach erfolgreichem Ende."""
+    if not aktiv():
+        subprocess.run(cmd, check=True)
+        return
+    total = total or duration
+    melden("export", "Audio wird exportiert", offset, total)
+    progress_cmd = cmd[:1] + ["-progress", "pipe:1", "-nostats"] + cmd[1:]
+    with subprocess.Popen(progress_cmd, stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace") as process:
+        for line in process.stdout:
+            key, _, value = line.strip().partition("=")
+            if key == "out_time_us":
+                try:
+                    elapsed = max(0, min(float(value) / 1_000_000, duration))
+                except ValueError:
+                    continue
+                # Der Encoder kann vor Schreiben des Dateikopfs schon die volle Audiozeit melden.
+                melden("export", "Audio wird exportiert", min(offset + elapsed, total * 0.999), total)
+        if process.wait():
+            raise subprocess.CalledProcessError(process.returncode, progress_cmd)
+    melden("export", "Audioexport gespeichert", offset + duration, total)
 
 def normalize_level(audio, target_rms_db: float = TARGET_RMS_DB, max_peak_db: float = MAX_PEAK_DB):
     """Statische Verstärkung auf Ziel-RMS, begrenzt durch den maximalen Spitzenpegel."""
@@ -135,12 +159,15 @@ def build_output(chapter_files, src: Path, title: str, *, fmt: str = "m4b",
     work = chapter_files[0][1].parent
     stem = src.with_suffix("").as_posix()
     total = sum(dur for _, _, dur in chapter_files)
+    melden("export", "Ausgabe wird vorbereitet")
 
     if fmt == "wav":
         outdir = Path(ausgabe or stem + "_wav")
         outdir.mkdir(exist_ok=True)
+        melden("export", "WAV-Kapitel werden kopiert", 0, len(chapter_files))
         for n, (t, wav, _) in enumerate(chapter_files, 1):
             shutil.copyfile(wav, outdir / f"{n:03d} - {sicherer_name(t, n)}.wav")
+            melden("export", f"{n} von {len(chapter_files)} WAV-Kapiteln kopiert", n, len(chapter_files))
         print(f"Fertig: {outdir}/ ({len(chapter_files)} WAV-Dateien, {fmt_dur(total)})")
         return
 
@@ -155,7 +182,8 @@ def build_output(chapter_files, src: Path, title: str, *, fmt: str = "m4b",
     if fmt == "mp3":
         outdir = Path(ausgabe or stem + "_mp3")
         outdir.mkdir(exist_ok=True)
-        for n, (t, wav, _) in enumerate(chapter_files, 1):
+        offset = 0.0
+        for n, (t, wav, duration) in enumerate(chapter_files, 1):
             mp3 = outdir / f"{n:03d} - {sicherer_name(t, n)}.mp3"
             cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav)]
             if cover:
@@ -163,7 +191,8 @@ def build_output(chapter_files, src: Path, title: str, *, fmt: str = "m4b",
             cmd += ["-map", "0:a", "-codec:a", "libmp3lame", "-b:a", bitrate]
             cmd += _cover_args(cover, fmt, 1)
             cmd += _tags(t, autor, album=title, track=f"{n}/{len(chapter_files)}")
-            subprocess.run(cmd + [str(mp3)], check=True)
+            _export_ffmpeg(cmd + [str(mp3)], duration, offset, total)
+            offset += duration
         print(f"Fertig: {outdir}/ ({len(chapter_files)} MP3-Dateien, {fmt_dur(total)})")
         return
 
@@ -189,5 +218,5 @@ def build_output(chapter_files, src: Path, title: str, *, fmt: str = "m4b",
         cmd += ["-c:a", "libmp3lame", "-b:a", bitrate, "-ac", "1", "-id3v2_version", "3", "-f", "mp3"]
     else:
         cmd += ["-c:a", "libopus", "-b:a", bitrate, "-ac", "1", "-vbr", "on", "-f", "opus"]
-    subprocess.run(cmd + [str(out)], check=True)
+    _export_ffmpeg(cmd + [str(out)], total)
     print(f"Fertig: {out}  ({fmt_dur(total)}, {len(chapter_files)} Kapitel, {bitrate}bit/s)")

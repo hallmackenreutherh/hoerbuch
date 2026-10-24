@@ -22,7 +22,7 @@ Ausführliche Anleitung: README.md
 """
 
 
-def main():
+def run_command():
     # Umlaute und Sonderzeichen auch dann ausgeben, wenn die Konsole (z. B. unter Windows bei
     # Umleitung in eine Datei) nicht auf UTF-8 steht.
     for stream in (sys.stdout, sys.stderr):
@@ -70,6 +70,7 @@ def main():
                                        "(sonst aus gleichnamiger .txt, sonst mit Whisper mitgeschrieben)")
     pr.add_argument("--nur-ref", action="store_true",
                     help="keine Stimmen entwerfen, nur die eigene Referenz testen")
+    pr.add_argument("--modell-stt", default=MODEL_STT, help="Whisper-Modell für fehlenden Referenztext")
     pr.add_argument("--design", action="append", metavar="BESCHREIBUNG",
                     help="zusätzliche Stimme nach eigener Beschreibung entwerfen (mehrfach möglich; "
                          "Alter, Tonlage, Klang, Tempo, Haltung – keine Personennamen). "
@@ -102,6 +103,7 @@ def main():
     v.add_argument("--ref-text", help="Wortlaut der Referenz (sonst aus gleichnamiger .txt, "
                                       "sonst mit Whisper mitgeschrieben)")
     v.add_argument("--titel", help="Titel des Hörbuchs")
+    v.add_argument("--modell-stt", default=MODEL_STT, help="Whisper-Modell für fehlenden Referenztext")
     v.add_argument("--autor", help="Autor, wird als Interpret in die Datei geschrieben")
     v.add_argument("--cover", help="Coverbild (JPG/PNG), eingebettet in M4B und MP3")
     v.add_argument("--format", choices=list(FORMATE), default="m4b",
@@ -120,4 +122,10 @@ def main():
     v.set_defaults(func=cmd_vertonen)
 
     args = p.parse_args()
-    args.func(args)
+    return args.func(args)
+
+
+def main():
+    # Console-Script-Launcher übergibt diesen Rückgabewert an sys.exit.
+    # Dateipfade sind Ergebnisse für die GUI, keine CLI-Exitcodes.
+    run_command()

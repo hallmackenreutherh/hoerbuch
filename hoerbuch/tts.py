@@ -10,6 +10,7 @@ import re
 import sys
 
 from .audio import lade_mono, normalize_level, trim_silence
+from .fortschritt import melden
 from .konfig import (BACKEND, LANGUAGE, MAX_CHARS_PER_SEC, MAX_TRIES, MIN_CHARS_PER_SEC,
                      MIN_SPEAKER_SIMILARITY, SPEAKER_MIN_SECONDS, torch_geraet_und_typ)
 
@@ -47,6 +48,7 @@ class _VoiceMLX(_Sprecherpruefung):
     """mlx-audio: Modell + Stimme. Hält nur ein Modell gleichzeitig im Speicher."""
 
     def __init__(self, model_id: str, verbose: bool = False):
+        melden("modell", "Sprachmodell wird geladen; beim ersten Einsatz auch heruntergeladen")
         try:
             import mlx.core as mx  # noqa: F401
             from mlx_audio.tts.utils import load_model
@@ -102,6 +104,7 @@ class _VoiceTorch(_Sprecherpruefung):
     """qwen-tts (PyTorch): dieselbe Schnittstelle wie _VoiceMLX."""
 
     def __init__(self, model_id: str, verbose: bool = False):
+        melden("modell", "Sprachmodell wird geladen; beim ersten Einsatz auch heruntergeladen")
         try:
             import torch
             from qwen_tts import Qwen3TTSModel
